@@ -1,9 +1,9 @@
 # Node.js
-node_modules/
-npm-debug.log
-.env
+#node_modules/
+#npm-debug.log
+#.env
 
 # Docker
-*.log
-docker-compose.override.yml
-*.pid
+#*.log
+#docker-compose.override.yml
+#*.pid
