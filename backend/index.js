@@ -145,6 +145,7 @@ io.on("connection", (socket) => {
     console.log("User disconnected:", socket.id);
   });
 });
+// get the user
 app.get("/users", async (req, res) => {
   try {
     const [users] = await db.query("SELECT id, username FROM users");

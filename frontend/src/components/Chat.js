@@ -27,6 +27,22 @@ const Chat = ({ user, onLogout }) => {
   const [keyPair, setKeyPair] = useState(null);
   const [sharedSecrets, setSharedSecrets] = useState({});
 
+  // Load or generate keys on component mount
+  useEffect(() => {
+    const loadOrGenerateKeys = async () => {
+      const storedKeyPair = localStorage.getItem(`keyPair_${user.id}`);
+      if (storedKeyPair) {
+        setKeyPair(JSON.parse(storedKeyPair));
+      } else {
+        const keys = await generateKeyPair();
+        setKeyPair(keys);
+        localStorage.setItem(`keyPair_${user.id}`, JSON.stringify(keys));
+      }
+    };
+    loadOrGenerateKeys();
+  }, [user.id]);
+
+  // Fetch all users
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -40,10 +56,9 @@ const Chat = ({ user, onLogout }) => {
 
     fetchUsers();
 
+    // Listen for incoming messages
     socket.on("receive_message", async (data) => {
-      if (data.sender_id === user.id) {
-        return; // Ignore messages sent by the current user as they're already added locally
-      }
+      if (data.sender_id === user.id) return; // Ignore messages sent by this user
 
       const chatKey = getChatKey(data.sender_id, data.receiver_id);
 
@@ -74,15 +89,7 @@ const Chat = ({ user, onLogout }) => {
     };
   }, [user.id, receiverId, sharedSecrets]);
 
-  useEffect(() => {
-    const generateKeys = async () => {
-      const keys = await generateKeyPair();
-      setKeyPair(keys);
-    };
-
-    generateKeys();
-  }, []);
-
+  // Fetch messages when receiver changes
   useEffect(() => {
     if (receiverId) {
       const chatKey = getChatKey(user.id, receiverId);
@@ -115,6 +122,15 @@ const Chat = ({ user, onLogout }) => {
     }
   }, [receiverId, user.id, chatCache]);
 
+  // Generate a new key pair
+  const generateNewKeyPair = async () => {
+    const keys = await generateKeyPair();
+    setKeyPair(keys);
+    localStorage.setItem(`keyPair_${user.id}`, JSON.stringify(keys));
+    alert("New key pair generated!");
+  };
+
+  // Send a message
   const sendMessage = async () => {
     if (!receiverId || !newMessage) {
       alert("Please select a user and type a message.");
@@ -153,6 +169,7 @@ const Chat = ({ user, onLogout }) => {
     socket.emit("send_message", messageData);
   };
 
+  // Exchange keys with another user
   const exchangeKeys = async (otherUserId) => {
     const otherUserPublicKey = prompt("Enter the other user's public key:");
     if (!otherUserPublicKey) return;
@@ -165,6 +182,7 @@ const Chat = ({ user, onLogout }) => {
     alert("Key exchange successful! Shared secret established.");
   };
 
+  // Helper functions
   const getChatKey = (id1, id2) => {
     return [id1, id2].sort().join("_");
   };
@@ -196,7 +214,6 @@ const Chat = ({ user, onLogout }) => {
         </Button>
       </Box>
 
-
       <Box mb={2}>
         <Typography>Your Public Key:</Typography>
         <TextField
@@ -206,13 +223,17 @@ const Chat = ({ user, onLogout }) => {
             readOnly: true,
           }}
         />
-        <Button
-          variant="outlined"
-          onClick={() => navigator.clipboard.writeText(keyPair?.publicKey || "")}
-          sx={{ mt: 1 }}
-        >
-          Copy Public Key
-        </Button>
+        <Box display="flex" gap={2} mt={2}>
+          <Button
+            variant="outlined"
+            onClick={() => navigator.clipboard.writeText(keyPair?.publicKey || "")}
+          >
+            Copy Public Key
+          </Button>
+          <Button variant="outlined" onClick={generateNewKeyPair}>
+            Generate New Key
+          </Button>
+        </Box>
       </Box>
 
       <Box mb={2}>

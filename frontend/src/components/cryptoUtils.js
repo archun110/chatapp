@@ -3,6 +3,19 @@
 // Import Web Crypto API
 const crypto = window.crypto;
 
+// Utility function to parse JSON only if it's a string
+const parseJSONIfNeeded = (key) => {
+  if (typeof key === "string") {
+    try {
+      return JSON.parse(key); // Parse only if it's a string
+    } catch (error) {
+      console.error("Invalid JSON string:", key);
+      throw error;
+    }
+  }
+  return key; // If already an object, return as-is
+};
+
 // Generate an ECDH key pair
 export const generateKeyPair = async () => {
   const keyPair = await crypto.subtle.generateKey(
@@ -14,21 +27,37 @@ export const generateKeyPair = async () => {
     ["deriveKey", "deriveBits"]
   );
 
-  // Export the public key for sharing
+  // Export the public and private keys for persistence and sharing
   const publicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  const privateKey = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
 
   return {
-    privateKey: keyPair.privateKey,
-    publicKey: JSON.stringify(publicKey), // Convert public key to a string for display
+    privateKey: JSON.stringify(privateKey), // Export as a JSON string for storage
+    publicKey: JSON.stringify(publicKey), // Export as a JSON string for sharing
   };
 };
 
-// Derive a shared secret using the private key and the other user's public key
-export const deriveSharedSecret = async (privateKey, otherPublicKey) => {
-  // Import the other user's public key
-  const importedPublicKey = await crypto.subtle.importKey(
+// Import a private key for use
+export const importPrivateKey = async (privateKeyJwk) => {
+  const parsedKey = parseJSONIfNeeded(privateKeyJwk);
+  return await crypto.subtle.importKey(
     "jwk",
-    JSON.parse(otherPublicKey), // Parse the JSON public key
+    parsedKey,
+    {
+      name: "ECDH",
+      namedCurve: "P-256",
+    },
+    true,
+    ["deriveKey", "deriveBits"]
+  );
+};
+
+// Import a public key for use
+export const importPublicKey = async (publicKeyJwk) => {
+  const parsedKey = parseJSONIfNeeded(publicKeyJwk);
+  return await crypto.subtle.importKey(
+    "jwk",
+    parsedKey,
     {
       name: "ECDH",
       namedCurve: "P-256",
@@ -36,6 +65,13 @@ export const deriveSharedSecret = async (privateKey, otherPublicKey) => {
     false,
     []
   );
+};
+
+// Derive a shared secret using the private key and the other user's public key
+export const deriveSharedSecret = async (privateKeyJwk, otherPublicKeyJwk) => {
+  // Import the private and public keys
+  const privateKey = await importPrivateKey(privateKeyJwk);
+  const importedPublicKey = await importPublicKey(otherPublicKeyJwk);
 
   // Derive the shared secret
   const sharedSecret = await crypto.subtle.deriveBits(
