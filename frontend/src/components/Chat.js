@@ -26,6 +26,7 @@ const Chat = ({ user, onLogout }) => {
   const [chatCache, setChatCache] = useState({});
   const [keyPair, setKeyPair] = useState(null);
   const [sharedSecrets, setSharedSecrets] = useState({});
+  const [sharedSecretDisplay, setSharedSecretDisplay] = useState("");
 
   // Load or generate keys on component mount
   useEffect(() => {
@@ -58,29 +59,40 @@ const Chat = ({ user, onLogout }) => {
 
     // Listen for incoming messages
     socket.on("receive_message", async (data) => {
-      if (data.sender_id === user.id) return; // Ignore messages sent by this user
+      try {
+        const chatKey = getChatKey(data.sender_id, data.receiver_id);
 
-      const chatKey = getChatKey(data.sender_id, data.receiver_id);
+        // Ensure the shared secret exists for the sender
+        if (!sharedSecrets[data.sender_id]) {
+          console.error(
+            `Shared secret missing for sender ${data.sender_id}. Ignoring message.`
+          );
+          return;
+        }
 
-      if (sharedSecrets[data.sender_id]) {
+        // Decrypt the message if a shared secret is available
         const decryptedMessage = await decryptMessage(
           sharedSecrets[data.sender_id],
           data.encryptedMessage,
           data.iv
         );
+
+        // Append the decrypted message to the chat cache and UI
         data.message = decryptedMessage;
-      }
 
-      setChatCache((prevCache) => ({
-        ...prevCache,
-        [chatKey]: [...(prevCache[chatKey] || []), data],
-      }));
+        setChatCache((prevCache) => ({
+          ...prevCache,
+          [chatKey]: [...(prevCache[chatKey] || []), data],
+        }));
 
-      if (
-        (data.sender_id === user.id && data.receiver_id === receiverId) ||
-        (data.sender_id === receiverId && data.receiver_id === user.id)
-      ) {
-        setMessages((prev) => [...prev, data]);
+        if (
+          (data.sender_id === receiverId && data.receiver_id === user.id) ||
+          (data.sender_id === user.id && data.receiver_id === receiverId)
+        ) {
+          setMessages((prev) => [...prev, data]);
+        }
+      } catch (error) {
+        console.error("Error processing received message:", error);
       }
     });
 
@@ -117,10 +129,19 @@ const Chat = ({ user, onLogout }) => {
 
         fetchMessages();
       }
+      // Update shared secret display for the selected receiver
+      if (sharedSecrets[receiverId]) {
+        setSharedSecretDisplay(
+          Array.from(new Uint8Array(sharedSecrets[receiverId])).join(",")
+        );
+      } else {
+        setSharedSecretDisplay("No shared secret yet");
+      }
     } else {
       setMessages([]);
+      setSharedSecretDisplay("No shared secret yet");
     }
-  }, [receiverId, user.id, chatCache]);
+  }, [receiverId, user.id, chatCache, sharedSecrets]);
 
   // Generate a new key pair
   const generateNewKeyPair = async () => {
@@ -178,7 +199,13 @@ const Chat = ({ user, onLogout }) => {
       keyPair.privateKey,
       otherUserPublicKey
     );
+
     setSharedSecrets((prev) => ({ ...prev, [otherUserId]: sharedSecret }));
+    if (otherUserId === receiverId) {
+      setSharedSecretDisplay(
+        Array.from(new Uint8Array(sharedSecret)).join(",")
+      ); // Update shared secret display for the active chat
+    }
     alert("Key exchange successful! Shared secret established.");
   };
 
@@ -234,6 +261,21 @@ const Chat = ({ user, onLogout }) => {
             Generate New Key
           </Button>
         </Box>
+      </Box>
+
+      <Box mb={2}>
+        <Typography>Shared Secrets:</Typography>
+        <TextField
+          value={
+            sharedSecretDisplay
+              ? `With ${getUsernameById(receiverId)}: ${sharedSecretDisplay}`
+              : "No shared secret yet"
+          }
+          fullWidth
+          InputProps={{
+            readOnly: true,
+          }}
+        />
       </Box>
 
       <Box mb={2}>
