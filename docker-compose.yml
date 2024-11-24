@@ -28,11 +28,7 @@ services:
 
   db:
     image: mysql:8.0
-<<<<<<< HEAD
     container_name: mysql_db_test
-=======
-    container_name: mysql_db
->>>>>>> origin/main
     ports:
       - "3306:3306"
     environment:
