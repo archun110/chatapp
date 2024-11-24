@@ -4,7 +4,9 @@ const cors = require("cors");
 const db = require("./db");
 const http = require("http");
 const { Server } = require("socket.io");
+const session = require("express-session");
 const argon2 = require("argon2");
+const svgCaptcha = require("svg-captcha");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,10 +23,31 @@ const io = new Server(server, {
 });
 
 // Enable CORS for all routes
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:3000", // Replace with your frontend origin
+    credentials: true, // Allow credentials (cookies) to be sent
+  })
+);
 
 // Middleware to parse JSON requests
 app.use(express.json());
+
+// Session middleware for storing captcha text
+app.use(
+  session({
+    secret: "your_secret_key", // Replace with a strong secret
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+      secure: false, // Use `true` only with HTTPS
+      httpOnly: true,
+      maxAge: 60000, // 1 minute
+      sameSite: "lax", // Adjust for cross-site cookie policy if needed
+    },
+  })
+);
+
 
 // Example GET route to confirm the backend is running
 app.get("/", (req, res) => {
@@ -43,6 +66,24 @@ app.get("/test-db", async (req, res) => {
   }
 });
 
+// Generate captcha
+app.get("/captcha", (req, res) => {
+  console.log("Generating captcha...");
+  const captcha = svgCaptcha.create({
+    size: 6,
+    noise: 3,
+    color: true,
+    background: "#ccf2ff",
+  });
+
+  req.session.captcha = captcha.text; // Store CAPTCHA text in session
+  console.log("Generated CAPTCHA text:", captcha.text);
+  console.log("Session ID for CAPTCHA generation:", req.sessionID);
+
+  res.type("svg");
+  res.status(200).send(captcha.data);
+});
+
 // Helper function for password strength validation
 const isPasswordStrong = (password) => {
   // Require at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character
@@ -50,11 +91,18 @@ const isPasswordStrong = (password) => {
   return regex.test(password);
 };
 
-// Registration route
+// Registration route with captcha validation
 app.post("/register", async (req, res) => {
   console.log("Incoming request:", req.body);
 
-  const { username, email, password } = req.body;
+  const { username, email, password, userCaptcha } = req.body;
+
+  // Validate captcha
+  if (!req.session.captcha || req.session.captcha !== userCaptcha) {
+    console.log("Invalid captcha:", userCaptcha);
+    return res.status(400).json({ message: "Invalid captcha" });
+  }
+
   if (!username || !email || !password) {
     console.log("Missing fields in request.");
     return res.status(400).json({ message: "All fields are required." });
@@ -62,12 +110,10 @@ app.post("/register", async (req, res) => {
 
   if (!isPasswordStrong(password)) {
     console.log("Password is not strong enough.");
-    return res
-      .status(400)
-      .json({
-        message:
-          "Password must be at least 8 characters long and include uppercase letters, lowercase letters, numbers, and special characters.",
-      });
+    return res.status(400).json({
+      message:
+        "Password must be at least 8 characters long and include uppercase letters, lowercase letters, numbers, and special characters.",
+    });
   }
 
   try {
@@ -99,11 +145,19 @@ app.post("/register", async (req, res) => {
 
 // Login route
 app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, captcha } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ message: "All fields are required." });
+  console.log("Session ID for CAPTCHA validation:", req.sessionID);
+  console.log("Stored CAPTCHA in session:", req.session.captcha);
+  console.log("User-provided CAPTCHA:", captcha);
+
+  if (!req.session.captcha || req.session.captcha.toLowerCase() !== captcha.toLowerCase()) {
+    console.log("Invalid CAPTCHA:", captcha);
+    return res.status(400).json({ message: "Invalid CAPTCHA." });
   }
+
+  // Clear the CAPTCHA from the session after validation
+  req.session.captcha = null;
 
   try {
     const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
@@ -124,7 +178,7 @@ app.post("/login", async (req, res) => {
       user: { id: user.id, username: user.username, email: user.email },
     });
   } catch (err) {
-    console.error("Error in /login route:", err);
+    console.error(err);
     res.status(500).json({ message: "Server error." });
   }
 });
@@ -190,8 +244,6 @@ io.on("connection", (socket) => {
     console.log("User disconnected:", socket.id);
   });
 });
-
-// Get the user list
 app.get("/users", async (req, res) => {
   try {
     const [users] = await db.query("SELECT id, username FROM users");

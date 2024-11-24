@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Button, TextField, Typography, Alert } from "@mui/material";
 
@@ -6,11 +6,30 @@ const Login = ({ setUser }) => {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
+    captcha: "",
   });
-
   const [message, setMessage] = useState("");
-
+  const [captchaImage, setCaptchaImage] = useState(null);
   const navigate = useNavigate();
+
+  // Fetch the CAPTCHA image on component mount or refresh
+  useEffect(() => {
+    fetchCaptcha();
+  }, []);
+
+  const fetchCaptcha = async () => {
+    try {
+      const response = await fetch("http://localhost:5000/captcha", {
+        method: "GET",
+        credentials: "include", // Ensure cookies are sent with the request
+      
+      });
+      const blob = await response.blob();
+      setCaptchaImage(URL.createObjectURL(blob));
+    } catch (err) {
+      console.error("Failed to fetch CAPTCHA:", err);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -20,8 +39,8 @@ const Login = ({ setUser }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.email || !formData.password) {
-      setMessage("All fields are required.");
+    if (!formData.email || !formData.password || !formData.captcha) {
+      setMessage("All fields, including CAPTCHA, are required.");
       return;
     }
 
@@ -31,6 +50,7 @@ const Login = ({ setUser }) => {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include", // Ensure the session cookie is sent
         body: JSON.stringify(formData),
       });
 
@@ -42,6 +62,7 @@ const Login = ({ setUser }) => {
       } else {
         const error = await response.json();
         setMessage(error.message || "Login failed.");
+        fetchCaptcha(); // Refresh CAPTCHA if login fails
       }
     } catch (err) {
       setMessage("Error: Unable to connect to the server.");
@@ -95,6 +116,28 @@ const Login = ({ setUser }) => {
           name="password"
           type="password"
           value={formData.password}
+          onChange={handleChange}
+          fullWidth
+          required
+        />
+        {captchaImage && (
+          <Box textAlign="center" mb={2}>
+            <img src={captchaImage} alt="CAPTCHA" />
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={fetchCaptcha}
+              sx={{ mt: 1 }}
+            >
+              Refresh CAPTCHA
+            </Button>
+          </Box>
+        )}
+        <TextField
+          label="CAPTCHA"
+          name="captcha"
+          type="text"
+          value={formData.captcha}
           onChange={handleChange}
           fullWidth
           required
