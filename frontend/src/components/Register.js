@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Button, TextField, Typography, Alert } from "@mui/material";
 
@@ -7,12 +7,31 @@ const Register = () => {
     username: "",
     email: "",
     password: "",
+    captcha: "",
   });
 
   const [message, setMessage] = useState("");
   const [passwordStrengthMessage, setPasswordStrengthMessage] = useState("");
-
+  const [captchaImage, setCaptchaImage] = useState(null);
   const navigate = useNavigate();
+
+  // Fetch the CAPTCHA image on component mount or refresh
+  useEffect(() => {
+    fetchCaptcha();
+  }, []);
+
+  const fetchCaptcha = async () => {
+    try {
+      const response = await fetch("http://localhost:5000/captcha", {
+        method: "GET",
+        credentials: "include", // Include cookies for session
+      });
+      const blob = await response.blob();
+      setCaptchaImage(URL.createObjectURL(blob));
+    } catch (err) {
+      console.error("Failed to fetch CAPTCHA:", err);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -38,8 +57,8 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.username || !formData.email || !formData.password) {
-      setMessage("All fields are required.");
+    if (!formData.username || !formData.email || !formData.password || !formData.captcha) {
+      setMessage("All fields, including CAPTCHA, are required.");
       return;
     }
 
@@ -54,15 +73,18 @@ const Register = () => {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include", // Include cookies for session
         body: JSON.stringify(formData),
       });
 
       if (response.ok) {
         setMessage("Registration successful!");
-        setFormData({ username: "", email: "", password: "" });
+        setFormData({ username: "", email: "", password: "", captcha: "" });
+        fetchCaptcha(); // Refresh CAPTCHA after successful registration
       } else {
         const error = await response.json();
         setMessage(error.message || "Registration failed.");
+        fetchCaptcha(); // Refresh CAPTCHA if registration fails
       }
     } catch (err) {
       setMessage("Error: Unable to connect to the server.");
@@ -134,6 +156,28 @@ const Register = () => {
             {passwordStrengthMessage}
           </Typography>
         )}
+        {captchaImage && (
+          <Box textAlign="center">
+            <img src={captchaImage} alt="CAPTCHA" />
+          </Box>
+        )}
+        <TextField
+          label="CAPTCHA"
+          name="captcha"
+          type="text"
+          value={formData.captcha}
+          onChange={handleChange}
+          fullWidth
+          required
+        />
+        <Button
+          variant="outlined"
+          color="secondary"
+          fullWidth
+          onClick={fetchCaptcha}
+        >
+          Refresh CAPTCHA
+        </Button>
         <Button type="submit" variant="contained" color="primary" fullWidth>
           Register
         </Button>

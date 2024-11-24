@@ -70,7 +70,7 @@ app.get("/test-db", async (req, res) => {
 app.get("/captcha", (req, res) => {
   console.log("Generating captcha...");
   const captcha = svgCaptcha.create({
-    size: 6,
+    size: 1,
     noise: 3,
     color: true,
     background: "#ccf2ff",
@@ -93,16 +93,25 @@ const isPasswordStrong = (password) => {
 
 // Registration route with captcha validation
 app.post("/register", async (req, res) => {
-  console.log("Incoming request:", req.body);
+  console.log("Incoming registration request:", req.body);
 
-  const { username, email, password, userCaptcha } = req.body;
+  const { username, email, password, captcha } = req.body;
 
-  // Validate captcha
-  if (!req.session.captcha || req.session.captcha !== userCaptcha) {
-    console.log("Invalid captcha:", userCaptcha);
-    return res.status(400).json({ message: "Invalid captcha" });
+  // Debugging logs
+  console.log("Session ID for CAPTCHA validation:", req.sessionID);
+  console.log("Stored CAPTCHA in session:", req.session.captcha);
+  console.log("User-provided CAPTCHA:", captcha);
+
+  // Validate CAPTCHA
+  if (!req.session.captcha || req.session.captcha.toLowerCase() !== captcha.toLowerCase()) {
+    console.log("Invalid CAPTCHA:", captcha);
+    return res.status(400).json({ message: "Invalid CAPTCHA." });
   }
 
+  // Clear the CAPTCHA from the session after validation
+  req.session.captcha = null;
+
+  // Validate the rest of the fields
   if (!username || !email || !password) {
     console.log("Missing fields in request.");
     return res.status(400).json({ message: "All fields are required." });
