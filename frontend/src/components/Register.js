@@ -10,12 +10,29 @@ const Register = () => {
   });
 
   const [message, setMessage] = useState("");
+  const [passwordStrengthMessage, setPasswordStrengthMessage] = useState("");
 
   const navigate = useNavigate();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
+
+    // Check password strength
+    if (name === "password") {
+      validatePasswordStrength(value);
+    }
+  };
+
+  const validatePasswordStrength = (password) => {
+    const strongPasswordRegex = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!strongPasswordRegex.test(password)) {
+      setPasswordStrengthMessage(
+        "Password must be at least 8 characters long and include uppercase letters, lowercase letters, numbers, and special characters."
+      );
+    } else {
+      setPasswordStrengthMessage(""); // Clear the message if the password is strong
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -23,6 +40,11 @@ const Register = () => {
 
     if (!formData.username || !formData.email || !formData.password) {
       setMessage("All fields are required.");
+      return;
+    }
+
+    if (passwordStrengthMessage) {
+      setMessage("Please provide a stronger password.");
       return;
     }
 
@@ -107,6 +129,11 @@ const Register = () => {
           fullWidth
           required
         />
+        {passwordStrengthMessage && (
+          <Typography variant="body2" color="error">
+            {passwordStrengthMessage}
+          </Typography>
+        )}
         <Button type="submit" variant="contained" color="primary" fullWidth>
           Register
         </Button>

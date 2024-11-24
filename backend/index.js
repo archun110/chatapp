@@ -4,6 +4,7 @@ const cors = require("cors");
 const db = require("./db");
 const http = require("http");
 const { Server } = require("socket.io");
+const argon2 = require("argon2");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -30,29 +31,68 @@ app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
+// Test database connection
+app.get("/test-db", async (req, res) => {
+  try {
+    const [test] = await db.query("SELECT 1");
+    console.log("Database connection test successful:", test);
+    res.status(200).json({ message: "Database connection successful.", test });
+  } catch (err) {
+    console.error("Database connection test failed:", err);
+    res.status(500).json({ message: "Database connection failed." });
+  }
+});
+
+// Helper function for password strength validation
+const isPasswordStrong = (password) => {
+  // Require at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character
+  const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+  return regex.test(password);
+};
+
 // Registration route
 app.post("/register", async (req, res) => {
-  const { username, email, password } = req.body;
+  console.log("Incoming request:", req.body);
 
+  const { username, email, password } = req.body;
   if (!username || !email || !password) {
+    console.log("Missing fields in request.");
     return res.status(400).json({ message: "All fields are required." });
   }
 
+  if (!isPasswordStrong(password)) {
+    console.log("Password is not strong enough.");
+    return res
+      .status(400)
+      .json({
+        message:
+          "Password must be at least 8 characters long and include uppercase letters, lowercase letters, numbers, and special characters.",
+      });
+  }
+
   try {
+    console.log("Checking if email exists...");
     const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
+
     if (rows.length > 0) {
+      console.log("Email already exists.");
       return res.status(409).json({ message: "Email already exists." });
     }
 
-    await db.query("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", [
-      username,
-      email,
-      password,
-    ]);
+    console.log("Hashing password...");
+    const hashedPassword = await argon2.hash(password);
+    console.log("Password hashed:", hashedPassword);
 
+    console.log("Inserting user into database...");
+    await db.query(
+      "INSERT INTO users (username, email, password) VALUES (?, ?, ?)",
+      [username, email, hashedPassword]
+    );
+
+    console.log("User registered successfully.");
     res.status(201).json({ message: "User registered successfully." });
   } catch (err) {
-    console.error(err);
+    console.error("Error in /register route:", err);
     res.status(500).json({ message: "Server error." });
   }
 });
@@ -73,13 +113,18 @@ app.post("/login", async (req, res) => {
 
     const user = rows[0];
 
-    if (user.password !== password) {
+    // Compare the hashed password
+    const isPasswordValid = await argon2.verify(user.password, password);
+    if (!isPasswordValid) {
       return res.status(401).json({ message: "Invalid password." });
     }
 
-    res.status(200).json({ message: "Login successful.", user: { id: user.id, username: user.username, email: user.email } });
+    res.status(200).json({
+      message: "Login successful.",
+      user: { id: user.id, username: user.username, email: user.email },
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Error in /login route:", err);
     res.status(500).json({ message: "Server error." });
   }
 });
@@ -145,7 +190,8 @@ io.on("connection", (socket) => {
     console.log("User disconnected:", socket.id);
   });
 });
-// get the user
+
+// Get the user list
 app.get("/users", async (req, res) => {
   try {
     const [users] = await db.query("SELECT id, username FROM users");
@@ -155,7 +201,6 @@ app.get("/users", async (req, res) => {
     res.status(500).json({ message: "Server error." });
   }
 });
-
 
 // Start the server
 server.listen(PORT, () => {
